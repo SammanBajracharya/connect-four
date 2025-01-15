@@ -1,13 +1,11 @@
 mod board;
+mod game;
 
-use board::{Board, Piece};
+use game::Game;
 
-fn main() {
-    let mut board = Board::new();
-    board.drop_piece(3, Piece::Blue);
-    board.drop_piece(3, Piece::Blue);
-    board.drop_piece(3, Piece::Blue);
-    board.drop_piece(3, Piece::Blue);
-    board.highlight_col(3);
-    board.print();
+fn main() -> anyhow::Result<()> {
+    let mut game = Game::new()?;
+    game.run()?;
+
+    Ok(())
 }

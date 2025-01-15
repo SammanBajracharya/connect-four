@@ -1,4 +1,10 @@
 use colored::Colorize;
+use crossterm::{
+    cursor,
+    style::{self, Print},
+    QueueableCommand,
+};
+use std::io::Write;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Piece {
@@ -20,30 +26,54 @@ impl Board {
         }
     }
 
-    pub fn print(&self) {
-        println!(" ╭ {} ╮", "1  2  3  4  5  6  7");
+    pub fn print(&self, stdout: &mut impl Write, start_x: u16, mut start_y: u16) -> anyhow::Result<()> {
+        let text = "Connect 4".cyan();
+        let width = 23;
+        let text_length = "Connect 4".len();  // Use the length of the plain text for calculating padding
+        let padding_left = (width - text_length) / 2;
+        let padding_right = width - text_length - padding_left;
+
+        stdout
+            .queue(cursor::MoveTo(start_x, start_y))?
+            .queue(style::Print(format!("{:>width$}", " ".repeat(padding_left) + &text.to_string() + &" ".repeat(padding_right))))?;
+        start_y += 2;
+
+        stdout
+            .queue(cursor::MoveTo(start_x, start_y))?
+            .queue(style::Print(format!(" ╭ {} ╮", "1  2  3  4  5  6  7")))?;
+        start_y += 1;
+
         for y in 0..6 {
-            print!(" |");
+            stdout
+                .queue(cursor::MoveTo(start_x, start_y))?
+                .queue(style::Print(format!(" |")))?;
             for x in 0..7 {
-                match self.board[x][y] {
-                    Piece::None => print!("{}", " ◯ ".dimmed()),
+                let piece_str = match self.board[x][y] {
+                    Piece::None => " ◯ ".dimmed().to_string(),
                     Piece::Red => {
                         match self.highlights[x][y] {
-                            true => print!("╏{}╏", "◈".red()),
-                            false => print!("{}", " ◉ ".red()),
+                            true => format!("╏{}╏", "◈".red()),
+                            false => format!("{}", " ◉ ".red()),
                         }
                     },
                     Piece::Blue => {
                         match self.highlights[x][y] {
-                            true => print!("╏{}╏", "◈".blue()),
-                            false => print!("{}", " ◉ ".blue()),
+                            true => format!("╏{}╏", "◈".blue()),
+                            false => format!("{}", " ◉ ".blue()),
                         }
                     }
-                }
+                };
+
+                stdout.queue(Print(piece_str))?;
             }
-            println!("| ");
+            stdout.queue(Print("| "))?;
+            start_y += 1;
         }
-        println!(" ╰─────────────────────╯");
+        stdout
+            .queue(cursor::MoveTo(start_x, start_y))?
+            .queue(style::Print(format!(" ╰─────────────────────╯ ")))?;
+
+        Ok(())
     }
 
     pub fn drop_piece(&mut self, x: usize, piece: Piece) {
