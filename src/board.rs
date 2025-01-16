@@ -17,7 +17,7 @@ impl Board {
     pub fn new() -> Board {
         Board {
             board: [[Piece::None; 6]; 7],
-            highlights: Some(0),
+            highlights: None,
             cx: 0,
         }
     }
@@ -123,6 +123,12 @@ impl Board {
             }
         }
         true
+    }
+
+    pub fn reset(&mut self) {
+        self.board = [[Piece::None; 6]; 7];
+        self.cx = 0;
+        self.highlights = Some(self.cx);
     }
 }
 

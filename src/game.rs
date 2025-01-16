@@ -32,7 +32,6 @@ pub struct Game {
     stdout: Stdout,
     board: Board,
     current_player: Piece,
-    game_over: bool,
     game_state: GameState,
     size: (u16, u16),
 }
@@ -50,7 +49,6 @@ impl Game {
             stdout,
             board: Board::new(),
             current_player: Piece::Red,
-            game_over: false,
             game_state: GameState::Start,
             size: terminal::size()?,
         })
@@ -125,7 +123,6 @@ impl Game {
             self.stdout
                 .queue(cursor::MoveTo(center_x, line_y))?
                 .queue(style::Print(string))?;
-                //.queue(style::Print(format!("{} - {}", text_len, string)))?;
 
             *y += 1;
         }
@@ -148,11 +145,20 @@ impl Game {
                     },
                     Action::Push => {
                         self.board.drop_piece(self.board.cx, self.current_player);
-                        self.game_over =
+                        let game_over =
                             self.board.check_for_win(self.board.cx) ||
                             self.board.is_board_full();
-                        if !self.game_over { self.change_player(); }
+                        if !game_over { self.change_player(); }
                         else { self.game_state = GameState::GameOver { winner: Some(self.current_player) } }
+                    },
+                    Action::ChangeGameState(GameState::Start) => {
+                        self.board.reset();
+                        self.current_player = Piece::Red;
+                        self.game_state = GameState::Start;
+                    },
+                    Action::ChangeGameState(GameState::Playing) => {
+                        self.board.highlights = Some(self.board.cx);
+                        self.game_state = GameState::Playing;
                     },
                     Action::ChangeGameState(state) => self.game_state = state,
                 }
@@ -191,7 +197,6 @@ impl Game {
 
         Ok(action)
     }
-
 
     fn handle_playing_event(&mut self, ev: event::Event) -> anyhow::Result<Option<Action>> {
         let action = match ev {
