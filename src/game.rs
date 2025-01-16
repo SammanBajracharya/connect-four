@@ -6,6 +6,7 @@ use crossterm::{cursor, event, ExecutableCommand, QueueableCommand};
 use colored::*;
 
 use strip_ansi::strip_ansi;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::board::{Board, Piece};
 use std::io::{self, Stdout, Write};
@@ -16,6 +17,15 @@ enum Action {
     Left,
     Right,
     Push,
+
+    ChangeGameState(GameState),
+}
+
+#[derive(PartialEq)]
+enum GameState {
+    Start,
+    Playing,
+    GameOver { winner: Option<Piece> },
 }
 
 pub struct Game {
@@ -23,6 +33,7 @@ pub struct Game {
     board: Board,
     current_player: Piece,
     game_over: bool,
+    game_state: GameState,
     size: (u16, u16),
 }
 
@@ -40,32 +51,41 @@ impl Game {
             board: Board::new(),
             current_player: Piece::Red,
             game_over: false,
+            game_state: GameState::Start,
             size: terminal::size()?,
         })
     }
 
     fn draw(&mut self) -> anyhow::Result<()> {
-        const BOARD_WIDTH: usize = 25;
         const BOARD_HEIGHT: usize = 8;
 
-        let start_x = ((self.size.0 as i32 - BOARD_WIDTH as i32) / 2).max(0) as u16;
         let mut start_y = ((self.size.1 as i32 - BOARD_HEIGHT as i32) / 2).max(0) as u16;
 
         let mut message = format!("{}", "Connect 4".cyan());
 
-        self.centred_print(message, BOARD_WIDTH, start_x, &mut start_y)?;
+        self.centred_print(message, &mut start_y)?;
+
+        message = self.get_game_status_str();
+        self.centred_print(message, &mut start_y)?;
         start_y += 1;
 
         let board_str = self.board.get_board();
-        self.centred_print(board_str, BOARD_WIDTH, start_x, &mut start_y)?;
+        self.centred_print(board_str, &mut start_y)?;
         start_y += 1;
 
-        message = self.get_game_status_str();
-        self.centred_print(message, BOARD_WIDTH, start_x, &mut start_y)?;
-        start_y += 1;
+        if self.game_state == GameState::Playing {
+            message = format!(
+                "Select Column: {}\n{}",
+                (self.board.cx + 1).to_string().yellow(),
+                "Press enter to confirm.",
+            );
+            self.centred_print(message, &mut start_y)?;
 
-        message = if self.game_over { "Game Over".to_string() } else { "Game Running".to_string() };
-        self.centred_print(message, BOARD_WIDTH, start_x, &mut start_y)?;
+            start_y += 1;
+        }
+
+        message = format!("{}", "Press Ctrl+C key at any time.".dimmed());
+        self.centred_print(message, &mut start_y)?;
 
         self.stdout.flush()?;
         Ok(())
@@ -78,42 +98,34 @@ impl Game {
             Piece::None => String::new(),
         };
 
-        let on_going_game_str = match self.current_player {
-            Piece::None => "Press any key to start!".to_string(),
-            _ => format!("It's {}'s turn!", current_player_str),
-        };
-
-        let game_over_str = match self.current_player {
-            Piece::Red => format!("{} wins!", current_player_str),
-            Piece::Blue => format!("{} wins!", current_player_str),
-            Piece::None => String::new(),
-        };
-
-        match self.game_over {
-            true => game_over_str,
-            false => on_going_game_str,
+        match self.game_state {
+            GameState::Start => "Press any key to start!".to_string(),
+            GameState::Playing => format!("It's {}'s turn!", current_player_str),
+            GameState::GameOver { winner } => {
+                match winner {
+                    Some(Piece::Red) => format!("{} wins!", "Red".red()),
+                    Some(Piece::Blue) => format!("{} wins!", "Blue".blue()),
+                    Some(Piece::None) | None => "It's a draw!".to_string(),
+                }
+            }
         }
     }
 
-    fn centred_print(&mut self, strings: String, board_width: usize, x: u16, y: &mut u16) -> anyhow::Result<()> {
-        self.stdout
-            .execute(cursor::MoveTo(x, *y))?;
+    fn centred_print(&mut self, strings: String, y: &mut u16) -> anyhow::Result<()> {
         let line_y = *y;
-
         for (i, string) in strings.lines().enumerate() {
             let line_y = line_y + i as u16;
-            let stripped_string = strip_ansi(string);
-            // NO IDEA WHATS GOING ON BUT IT WORKS
-            let text_len = stripped_string.len().min(board_width);
-            let center_x = x + (board_width / 2) as u16 - (text_len / 2) as u16;
+            let text_len = strip_ansi(string).graphemes(true).count();
+            let center_x = (self.size.0 - text_len as u16) / 2;
 
             self.stdout
                 .queue(cursor::MoveTo(0, line_y))?
-                .queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+                .queue(terminal::Clear(terminal::ClearType::FromCursorDown))?;
 
             self.stdout
                 .queue(cursor::MoveTo(center_x, line_y))?
                 .queue(style::Print(string))?;
+                //.queue(style::Print(format!("{} - {}", text_len, string)))?;
 
             *y += 1;
         }
@@ -139,9 +151,10 @@ impl Game {
                         self.game_over =
                             self.board.check_for_win(self.board.cx) ||
                             self.board.is_board_full();
-                        if self.game_over { break; }
-                        else { self.change_player(); }
+                        if !self.game_over { self.change_player(); }
+                        else { self.game_state = GameState::GameOver { winner: Some(self.current_player) } }
                     },
+                    Action::ChangeGameState(state) => self.game_state = state,
                 }
             }
         }
@@ -149,14 +162,30 @@ impl Game {
         Ok(())
     }
 
-    fn change_player(&mut self) {
-        match self.current_player {
-            Piece::Red | Piece::None => self.current_player = Piece::Blue,
-            Piece::Blue => self.current_player = Piece::Red,
-        }
+    fn handle_event(&mut self, ev: event::Event) -> anyhow::Result<Option<Action>> {
+        let action = match self.game_state {
+            GameState::Start => {
+                if let event::Event::Key(_) = ev {
+                    Some(Action::ChangeGameState(GameState::Playing))
+                } else {
+                    None
+                }
+            }
+            GameState::Playing => self.handle_playing_event(ev)?,
+            GameState::GameOver { .. } => {
+                if let event::Event::Key(_) = ev {
+                    Some(Action::ChangeGameState(GameState::Start))
+                } else {
+                    None
+                }
+            }
+        };
+
+        Ok(action)
     }
 
-    fn handle_event(&mut self, ev: event::Event) -> anyhow::Result<Option<Action>> {
+
+    fn handle_playing_event(&mut self, ev: event::Event) -> anyhow::Result<Option<Action>> {
         if matches!(ev, event::Event::Resize(_, _)) {
             self.size = terminal::size()?;
         }
@@ -173,6 +202,13 @@ impl Game {
         };
 
         Ok(action)
+    }
+
+    fn change_player(&mut self) {
+        match self.current_player {
+            Piece::Red | Piece::None => self.current_player = Piece::Blue,
+            Piece::Blue => self.current_player = Piece::Red,
+        }
     }
 
     pub fn cleanup(&mut self) -> anyhow::Result<()> {

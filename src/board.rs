@@ -27,10 +27,10 @@ impl Board {
 
         string.push_str(" ╭ 1  2  3  4  5  6  7 ╮ \n");
         for y in 0..6 {
-            string.push_str(" |");
+            string.push_str(" │");
             for x in 0..7 {
                 let border = match self.highlights {
-                    Some(col) => if col == x { "╏" } else { " " },
+                    Some(col) => if col == x { "┊" } else { " " },
                     None => " ",
                 };
 
@@ -47,9 +47,20 @@ impl Board {
 
                 string.push_str(piece_str);
             }
-            string.push_str("| \n");
+            string.push_str("│ \n");
         }
-        string.push_str(" ╰─────────────────────╯ ");
+        string.push_str(" ╰");
+        for x in 0..7 {
+            match self.highlights {
+                Some(col) => if col == x {
+                    string.push_str("┴─┴")
+                } else {
+                    string.push_str("───")
+                },
+                None => string.push_str("───"),
+            }
+        }
+        string.push_str("╯ ");
         string
     }
 
