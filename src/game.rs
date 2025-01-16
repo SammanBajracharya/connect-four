@@ -62,6 +62,10 @@ impl Game {
 
         message = self.get_game_status_str();
         self.centred_print(message, BOARD_WIDTH, start_x, &mut start_y)?;
+        start_y += 1;
+
+        message = if self.game_over { "Game Over".to_string() } else { "Game Running".to_string() };
+        self.centred_print(message, BOARD_WIDTH, start_x, &mut start_y)?;
 
         self.stdout.flush()?;
         Ok(())
@@ -132,9 +136,11 @@ impl Game {
                     },
                     Action::Push => {
                         self.board.drop_piece(self.board.cx, self.current_player);
-                        self.game_over = self.board.check_for_win(self.board.cx, self.current_player);
-                        self.change_player();
-                        self.game_over = self.board.is_board_full();
+                        self.game_over =
+                            self.board.check_for_win(self.board.cx) ||
+                            self.board.is_board_full();
+                        if self.game_over { break; }
+                        else { self.change_player(); }
                     },
                 }
             }

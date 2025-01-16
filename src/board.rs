@@ -1,6 +1,6 @@
 use colored::Colorize;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Piece {
     None,
     Red,
@@ -11,13 +11,6 @@ pub struct Board {
     board: [[Piece; 6]; 7],
     pub highlights: Option<usize>,
     pub cx: usize,
-}
-
-pub fn get_padding(text: String, width: usize) -> (usize, usize) {
-    let left_padding = (width - text.len()) / 2;
-    let right_padding = width - text.len() - left_padding;
-
-    (left_padding, right_padding)
 }
 
 impl Board {
@@ -72,48 +65,40 @@ impl Board {
         }
     }
 
-    //pub fn highlight_col(&mut self, x: usize) {
-    //    self.highlights = [[fa;
-    //    for y in 0..6 {
-    //        self.highlights[x][y] = true;
-    //    }
-    //}
-
-    pub fn check_for_win(&mut self, x: usize, piece: Piece) -> bool {
-        let check_bound: [[(isize, isize); 2]; 4] = [
-            [(-1, -1), (1, 1)], // Diagonal top-left to bottom-right
-            [(1, -1), (-1, 1)], // Diagonal bottom-left to top-right
-            [(1, 0), (-1, 0)],  // Horizontal
-            [(0, 1), (0, -1)],  // Vertical
+    pub fn check_for_win(&mut self, x: usize) -> bool {
+        let directions: [[(isize, isize); 2]; 4] = [
+            [(-1, -1), (1, 1)],   // Diagonal (↘↖)
+            [(1, -1), (-1, 1)],   // Anti-diagonal (↗↙)
+            [(-1, 0), (1, 0)],    // Horizontal (←→)
+            [(0, -1), (0, 1)],    // Vertical (↑↓)
         ];
 
-        let mut y = None;
-        for row in 0..6 {
-            if self.board[x][row] == piece { y = Some(row); }
+        let mut y = 0;
+        for i in 0..6 {
+            if self.board[x][i] != Piece::None {
+                y = i;
+                break;
+            }
         }
 
-        let y = match y {
-            Some(y) => y,
-            None => return false,
-        };
-
-        for &directions in &check_bound {
+        for dir_pair in directions.iter() {
             let mut count = 1;
 
-            for &(dx, dy) in directions.iter() {
+            for &(dx, dy) in dir_pair.iter() {
                 let mut curr_x = x as isize;
                 let mut curr_y = y as isize;
 
-                while (0..7).contains(&curr_x) && (0..6).contains(&curr_y) {
-                    if self.board[curr_x as usize][curr_y as usize] != piece {
-                        break;
-                    }
-                    count += 1;
+                for _ in 0..3 {
                     curr_x += dx;
                     curr_y += dy;
+
+                    if !(0..7).contains(&curr_x) || !(0..6).contains(&curr_y) { break; }
+                    if self.board[x][y] != self.board[curr_x as usize][curr_y as usize] { break; }
+
+
+                    count += 1;
                 }
             }
-
             if count >= 4 { return true; }
         }
 
@@ -127,5 +112,108 @@ impl Board {
             }
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vertical_win() {
+        let mut board = Board::new();
+        board.drop_piece(0, Piece::Red);
+        board.drop_piece(0, Piece::Red);
+        board.drop_piece(0, Piece::Red);
+        board.drop_piece(0, Piece::Red);
+        assert!(board.check_for_win(0));
+    }
+
+    #[test]
+    fn test_horizontal_win() {
+        let mut board = Board::new();
+        board.drop_piece(0, Piece::Red);
+        board.drop_piece(1, Piece::Red);
+        board.drop_piece(2, Piece::Red);
+        board.drop_piece(3, Piece::Red);
+        assert!(board.check_for_win(3));
+    }
+
+    #[test]
+    fn test_diagonal_win() {
+        let mut board = Board::new();
+        board.drop_piece(0, Piece::Red);
+        board.drop_piece(0, Piece::Blue);
+        board.drop_piece(0, Piece::Blue);
+        board.drop_piece(0, Piece::Red);
+
+        board.drop_piece(1, Piece::Blue);
+        board.drop_piece(1, Piece::Blue);
+        board.drop_piece(1, Piece::Red);
+
+        board.drop_piece(2, Piece::Blue);
+        board.drop_piece(2, Piece::Red);
+
+        board.drop_piece(3, Piece::Red);
+
+        assert!(board.check_for_win(3));
+    }
+
+    #[test]
+    fn test_anti_diagonal_win() {
+        let mut board = Board::new();
+        board.drop_piece(3, Piece::Red);
+        board.drop_piece(3, Piece::Blue);
+        board.drop_piece(3, Piece::Blue);
+        board.drop_piece(3, Piece::Blue);
+
+        board.drop_piece(2, Piece::Blue);
+        board.drop_piece(2, Piece::Blue);
+        board.drop_piece(2, Piece::Red);
+
+        board.drop_piece(1, Piece::Blue);
+        board.drop_piece(1, Piece::Red);
+
+        board.drop_piece(0, Piece::Red);
+
+        assert!(board.check_for_win(0));
+    }
+
+    #[test]
+    fn test_no_win() {
+        let mut board = Board::new();
+        board.drop_piece(0, Piece::Red);
+        board.drop_piece(1, Piece::Blue);
+        board.drop_piece(2, Piece::Red);
+        assert!(!board.check_for_win(2));
+    }
+
+    #[test]
+    fn test_board_full() {
+        let mut board = Board::new();
+        for x in 0..7 {
+            for _ in 0..6 {
+                board.drop_piece(x, Piece::Red);
+            }
+        }
+        assert!(board.is_board_full());
+    }
+
+    #[test]
+    fn test_board_not_full() {
+        let mut board = Board::new();
+        board.drop_piece(0, Piece::Red);
+        board.drop_piece(1, Piece::Blue);
+        assert!(!board.is_board_full());
+    }
+
+    #[test]
+    fn test_drop_piece_full_column() {
+        let mut board = Board::new();
+        for _ in 0..6 {
+            board.drop_piece(0, Piece::Red);
+        }
+        board.drop_piece(0, Piece::Blue);
+        assert_eq!(board.board[0][0], Piece::Red);
     }
 }
