@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use crossterm::style;
 use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, event, ExecutableCommand, QueueableCommand};
@@ -163,6 +163,14 @@ impl Game {
     }
 
     fn handle_event(&mut self, ev: event::Event) -> anyhow::Result<Option<Action>> {
+        if matches!(ev, event::Event::Resize(_, _)) {
+            self.size = terminal::size()?;
+        }
+
+        if let event::Event::Key(event) = ev {
+            if let (KeyModifiers::CONTROL, KeyCode::Char('c')) = (event.modifiers, event.code) { return Ok(Some(Action::Quit)) }
+        };
+
         let action = match self.game_state {
             GameState::Start => {
                 if let event::Event::Key(_) = ev {
@@ -186,13 +194,8 @@ impl Game {
 
 
     fn handle_playing_event(&mut self, ev: event::Event) -> anyhow::Result<Option<Action>> {
-        if matches!(ev, event::Event::Resize(_, _)) {
-            self.size = terminal::size()?;
-        }
-
         let action = match ev {
             event::Event::Key(event) => match event.code {
-                KeyCode::Char('q') => Some(Action::Quit),
                 KeyCode::Char('h') | KeyCode::Left => Some(Action::Left),
                 KeyCode::Char('l') | KeyCode::Right => Some(Action::Right),
                 KeyCode::Enter => Some(Action::Push),
